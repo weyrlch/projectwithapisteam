@@ -25,3 +25,4 @@ python -m venv venv
 source venv/bin/activate   # ou .\venv\Scripts\activate no Windows
 pip install -r requirements.txt
 python app.py
+open api.py edit with your api
