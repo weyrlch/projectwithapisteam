@@ -1,0 +1,71 @@
+body { font-family: Arial, sans-serif; text-align: center; background-color: #f5f5f5; }
+h1 { color: #333; }
+img.avatarmain { width: 150px; height: 150px; }
+img.games { width: 51px; height: 51px; }
+img.flag { border-radius: 0%; width: 16px; height: 11px; }
+form { margin-top: 20px; }
+input, button { padding: 10px; margin: 5px; }
+button { background-color: #007bff; color: white; border: none; cursor: pointer; }
+
+img.badge_icon {
+    width: 80px;
+    height: 80px;
+}
+
+.footer {
+    position: fixed;
+    bottom: 10px;
+    width: 100%;
+    text-align: center;
+}
+
+.footer a {
+    font-size: 18px;
+    text-decoration: none;
+    color: #5e2ca5;
+}
+
+.friends-box {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+    margin: 0 auto;
+    width: 90%;
+    max-width: 600px;
+}
+
+.friends-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.friend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.friend-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    margin-right: 8px;
+}
+
+.friend-info {
+    text-align: left;
+}
+
+.friend-name {
+    font-size: 0.85rem;
+    font-weight: bold;
+}
+
+.friend-since {
+    font-size: 0.75rem;
+    color: #555;
+}

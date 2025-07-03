@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Perfil do Jogador</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="https://community.cloudflare.steamstatic.com/public/css/applications/community/profile.css">
+</head>
+<body>
+    <h1>Perfil do Jogador</h1>
+    <img src="{{ player.avatar }}" class="avatarmain" alt="Foto do Perfil">
+    <h2>Nome: {{ player.name }}</h2>
+
+    {% if player.lvl is defined %}
+        {% if player.lvl >= 100 %}
+            <div class="friendPlayerLevel lvl_{{ (player.lvl // 100) * 100 }} lvl_plus_{{ (player.lvl % 100) // 10 * 10 }}">
+                <span class="friendPlayerLevelNum">{{ player.lvl }}</span>
+            </div>
+        {% else %}
+            <div class="friendPlayerLevel lvl_{{ (player.lvl // 10) * 10 }} lvl_plus_{{ player.lvl % 10 }}">
+                <span class="friendPlayerLevelNum">{{ player.lvl }}</span>
+            </div>
+        {% endif %}
+    {% endif %}
+
+    {% if player.vanity_url != None %}
+    <p>LinkCustom: <a href="https://steamcommunity.com/id/{{ player.vanity_url }}/" target="_blank">https://steamcommunity.com/id/{{ player.vanity_url }}/</a></p>
+    {% endif %}
+    <p>Steam ID: <a href="{{ player.profileurl }}" target="_blank">{{ player.steam_id }}</a></p>
+    <p>Permalink: <a href="https://steamcommunity.com/profiles/{{ player.steam_id }}" target="_blank">https://steamcommunity.com/profiles/{{ player.steam_id }}</a></p>
+
+    {% if player.communityvisibilitystate == 1 %}
+        <p>O perfil está privado!</p>
+    {% elif player.communityvisibilitystate == 2 %}
+        <p>O perfil está apenas para amigos!</p>
+    {% elif player.communityvisibilitystate == 3 %}
+        <p>O perfil está público!</p>
+    {% endif %}
+
+
+{% if player.locinfos %}
+    <ul>
+    {% for key, value in player.locinfos.items() %}
+        {% if value is not none %}
+            <li><strong>{{ key|capitalize }}:</strong> {{ value }}</li>
+        {% endif %}
+    {% endfor %}
+    </ul>
+{% endif %}
+
+    {% if player.loccountrycode %}
+    <span>
+        <img src="https://community.cloudflare.steamstatic.com/public/images/countryflags/{{ player.loccountrycode.lower() }}.gif" class="flag">
+        {{ player.loccountrycode }}
+    </span>
+    {% endif %}
+
+    {% if player.vac_bans >= 1 %}
+        <p>Este usuário tem {{ player.vac_bans }} VAC ban(s) ❌</p>
+    {% else %}
+        <p>Este usuário não tem banimentos VAC ✅</p>
+    {% endif %}
+
+    {% if player.game_bans >= 1 %}
+        <p>Este usuário tem {{ player.game_bans }} Game Ban(s) ❌</p>
+    {% else %}
+        <p>Este usuário não tem Game Bans ✅</p>
+    {% endif %}
+
+    {% if player.community_ban >= 1 %}
+        <p>Este usuário tem Community Ban ❌</p>
+    {% else %}
+    <p>Este usuário não tem Community Ban ✅</p>
+    {% endif %}
+
+
+    {% if player.trade_ban == "banned" %}
+    <p>Este usuário tem Trade Ban ❌</p>
+    {% elif player.trade_ban == "probation" %}
+    <p>Este usuário está sobe investigação de trade ban ⚠️</p>
+    {% elif player.trade_ban == "none" %}
+    <p>Este usuário não tem Trade Ban ✅</p>
+    {% endif %}
+    {% if player.xpyos > 0 %}
+    <p><img src="https://community.fastly.steamstatic.com/public/images/badges/02_years/steamyears{{ player.xpyos // 50 }}_80.png" class="badge_icon"></p>
+    {% endif %}
+    {% if player.acclimit5dol == 1 %}
+    <p>Os anos de conta não estão sincronizados com a badge</p>
+    <p>provalmente esse usuário não gastou os 5 dolares! </p>
+    <p> ↑↑↑ ⚠️ Conta provalmente restrita ⚠️ ↑↑↑ </p>
+    {% endif %}
+    {% if player.xpyos != 0 %}
+    <p>Years of Service XP: {{ player.xpyos }}</p>
+    {% endif %}
+
+    <p>{{ conversor_timestamp(player.account_age, none) }} (timestamp: {{ player.account_age }})</p>
+{% if badge_number is defined %}
+    {% if player.badge_xp %}
+    <a href="https://steamcommunity.com/profiles/{{ player.steam_id }}/badges/13">
+    <img src="https://community.fastly.steamstatic.com/public/images/badges/13_gamecollector/{{ badge_number(player.games_count) }}_80.png?v=4" class="games">
+        </a>
+    <p>🏆 XP da Insígnia de Colecionador de Jogos: XP:{{ player.badge_xp }}</p>
+    <p>🎖️️ Esse usuario tem {{ player.badge_count }} badges na conta</p>
+        {% if player.badge_name %}
+            <p>🎖️ Insígnia: {{ player.badge_name }}</p>
+            <p>🎮 Jogos Possuídos Estimados: {{ player.games_count }}</p>
+        {% else %}
+            <p>⚠️ O XP não bate com nenhum valor exato de jogos na nossa tabela.</p>
+        {% endif %}
+    {% endif %}
+{% endif %}
+
+
+
+---
+<h3>Amigos (limitado a 50)</h3>
+
+{% if player.friends %}
+<div class="friends-box">
+    <ul class="friends-list">
+        {% for friend in player.friends %}
+        <li class="friend-item">
+            <img src="{{ friend.avatar }}" alt="Avatar do amigo" class="friend-avatar">
+            <div class="friend-info">
+                <a href="/id/{{ friend.steamid }}" target="_blank"><div class="friend-name">{{ friend.personaname }}</a> | <a href="https://steamcommunity.com/profiles/{{ friend.steamid }}/" target="_blank">steam</a></div>
+                <div class="friend-since">Desde: {{ conversor_timestamp(friend.friend_since, none) }}</div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% else %}
+    <p>A lista de amigos não está disponível ou é privada.</p>
+{% endif %}
+
+
+
+
+    <a href="https://steamid.uk/profile/{{ player.steam_id }}/" target="_blank">SteamID.uk</a>
+    <a href="https://steamdb.info/calculator/{{ player.steam_id }}/" target="_blank">SteamDB</a>
+    <a href="https://csstats.gg/player/{{ player.steam_id }}/" target="_blank">CS2Stats</a>
+    <a href="https://steamladder.com/profile/{{ player.steam_id }}/" target="_blank">SteamLadder</a>
+
+
+<footer class="footer">
+    <a href="/">🔙 Voltar</a>
+</footer>
+
+</body>
+</html>
