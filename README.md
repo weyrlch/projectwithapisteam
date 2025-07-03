@@ -15,21 +15,6 @@ A simple web app that fetches and displays Steam profile information, badges, an
 - Jinja2 Templates
 - HTML + CSS
 
-## 📁 Project Structure
-project/
-├── static/
-│ └── styles.css
-├── templates/
-│ ├── index.html
-│ ├── profile.html
-│ └── error.html
-├── app.py
-├── api.py
-├── steam_api.py
-├── badge_utils.py
-├── requirements.txt
-└── .gitignore
-
 
 ## ⚙️ Installation
 
