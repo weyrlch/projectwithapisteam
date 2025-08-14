@@ -3,13 +3,20 @@
 import requests
 import re
 from flask import Flask, render_template, request
-from api import STEAM_API_KEY
+from api import SMARTAPI
 from datetime import datetime
 from bs4 import BeautifulSoup
 from badge_utils import badge_from_xp
+import database
+import threading # NOVO: Import para threading
+from background_jobs import fila
+import queue
 
 
+fila_steam_ids = queue.Queue()
 app = Flask(__name__)
+database.criar_tabela_historico()
+
 
 def badgeschecker(url):
     linkprofile = f"https://steamcommunity.com/profiles/{url}"
@@ -85,7 +92,7 @@ def get_location_dict(profile_url):
 
 def resolve_vanity_url(vanity_url):
     """Converte nome customizado da Steam para Steam ID64."""
-    url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={STEAM_API_KEY}&vanityurl={vanity_url}"
+    url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={SMARTAPI}&vanityurl={vanity_url}"
     response = requests.get(url).json()
 
     if response.get("response", {}).get("success") == 1:
@@ -109,7 +116,7 @@ def get_custom_url(steam_id):
 
 def get_badge_xp(steam_id, idbadge):
     """Obtém o XP da Insígnia de Colecionador de Jogos via Steam Web API."""
-    url = f"https://api.steampowered.com/IPlayerService/GetBadges/v1/?key={STEAM_API_KEY}&steamid={steam_id}"
+    url = f"https://api.steampowered.com/IPlayerService/GetBadges/v1/?key={SMARTAPI}&steamid={steam_id}"
     try:
         response = requests.get(url).json()
         badges = response.get("response", {}).get("badges", [])
@@ -152,97 +159,148 @@ def conversor_timestamp(creation_date, inputconfig):
     return "Formato inválido"
 
 
-def acclimit5dol(xp, year, communityban, cvs):
+def acclimit5dol(xp, year, communityban, cvs, level):
     if cvs != 3 or communityban != 0:
         return 2  ## not enough info to conclude
 
-    if xp // 50 == year:
+    if xp // 50 == year or level > 10:
         return 0  ## no limit
 
     return 1  ## acc has a limit
 
-
-def get_player_info(steam_id, api_key):
-
+def get_player_info(steam_id, api_key): # Adicionei um valor padrão para 'method'
     # URLs da API Steam
     profile_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={api_key}&steamids={steam_id}"
     ban_url = f"https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key={api_key}&steamids={steam_id}"
     lvl_url = f"https://api.steampowered.com/IPlayerService/GetSteamLevel/v1/?key={api_key}&steamid={steam_id}"
     friends_url = f"https://api.steampowered.com/ISteamUser/GetFriendList/v1/?key={api_key}&steamid={steam_id}&relationship=friend"
+    badges_url = f"https://api.steampowered.com/IPlayerService/GetBadges/v1/?key={api_key}&steamid={steam_id}"
+    if not database.pode_atualizar(steam_id):
+        try:
+            profile_response = requests.get(profile_url).json()
+            ban_response = requests.get(ban_url).json()
+            lvl_response = requests.get(lvl_url).json()
+            friends_response = requests.get(friends_url).json()
+            badges_response = requests.get(badges_url).json()
 
-    try:
-        profile_response = requests.get(profile_url).json()
-        ban_response = requests.get(ban_url).json()
-        lvl_response = requests.get(lvl_url).json()
-        friends_response = requests.get(friends_url).json()
+            profile_data = profile_response.get("response", {}).get("players", [])
+            ban_data = ban_response.get("players", [])
+            steam_level = lvl_response.get("response", {}).get("player_level", 0)
+            steam_friends_raw = friends_response.get("friendslist", {}).get("friends", [])
 
-        profile_data = profile_response.get("response", {}).get("players", [])
-        ban_data = ban_response.get("players", [])
-        steam_level = lvl_response.get("response", {}).get("player_level", 0)
-        steam_friends_raw = friends_response.get("friendslist", {}).get("friends", [])
+            # Resumo dos amigos DIRETOS (para exibição na página inicial, se necessário)
+            steam_ids_direct_friends = [f["steamid"] for f in steam_friends_raw]
+            summary_url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+            summary_response = requests.get(summary_url, params={
+                "key": api_key,
+                "steamids": ",".join(steam_ids_direct_friends)
+            }).json()
 
-        # Resumo dos amigos
-        steam_ids = [f["steamid"] for f in steam_friends_raw]
-        summary_url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
-        summary_response = requests.get(summary_url, params={
-            "key": api_key,
-            "steamids": ",".join(steam_ids)
-        }).json()
+            players_data_direct_friends = summary_response.get("response", {}).get("players", [])
+            friends_final_for_display = []  # Lista para os amigos diretos que serão exibidos
 
-        players_data = summary_response.get("response", {}).get("players", [])
-        friends_final = []
+            # XP da badge Game Collector
+            badge_xp = get_badge_xp(steam_id, 13)
 
-        def lvl_friend(api, steamidfriend):
-            lvl_friendurl = f"https://api.steampowered.com/IPlayerService/GetSteamLevel/v1/?key={api}&steamid={steamidfriend}"
-            lvl_response_friend = requests.get(lvl_friendurl).json()
-            return lvl_response_friend.get("response", {}).get("player_level", 0)
+            if not profile_data or not ban_data:
+                return None
+
+            player = profile_data[0]
+            player_xp = badges_response.get("response", {}).get("player_xp", 0)
+            bans = ban_data[0]
+            badge_name, games_count = badge_from_xp(badge_xp)
+
+            player_data = {
+                "steam_id": steam_id,
+                "name": player.get("personaname", "Desconhecido"),
+                "realname": player.get("realname", ""),
+                "avatar": player.get("avatarfull", ""),
+                "profileurl": player.get("profileurl", f"https://steamcommunity.com/profiles/{steam_id}"),
+                "vac_bans": bans.get("NumberOfVACBans", 0),
+                "game_bans": bans.get("NumberOfGameBans", 0),
+                "community_ban": bans.get("CommunityBanned", False),
+                "trade_ban": bans.get("EconomyBan", "none"),
+                "loccountrycode": player.get("loccountrycode"),
+                "stateinfos": player.get("locstatecode"),
+                "cityinfos": player.get("loccityid"),
+                "communityvisibilitystate": player.get("communityvisibilitystate"),
+                "account_age": player.get("timecreated"),
+                "xpyos": get_badge_xp(steam_id, 1),
+                "vanity_url": get_custom_url(steam_id),
+                "acclimit5dol": (
+                    acclimit5dol(
+                        get_badge_xp(steam_id, 1),
+                        conversor_timestamp(player.get("timecreated"), "year"),
+                        bans.get("CommunityBanned", False),
+                        player.get("communityvisibilitystate"),
+                        steam_level
+                    )
+                ),
+                "friends": steam_friends_raw,  # A lista RAW de amigos, que será salva no DB
+                "lvl": steam_level,
+                "badge_xp": badge_xp,
+                "badge_name": badge_name,
+                "games_count": games_count,
+                "xp": player_xp,
+                "badge_count": badgeschecker(steam_id)
+            }
+            database.salvar_versao(player_data)
+            expired_id = database.get_next_expired_profile(steam_id, api_key)
+            print(expired_id)
+            if expired_id is not None:
+                fila.put(expired_id)
+
+                # --- MUDANÇA CRÍTICA AQUI: INICIA A TAREFA DE BACKGROUND ---
+                # O player principal e seus amigos diretos serão processados e salvos.
+                # Em seguida, uma tarefa em segundo plano será iniciada para este player.
+                # Essa tarefa em background vai se aprofundar nos amigos dos amigos.
+
+            # Para a exibição imediata no HTML:
+            # Preenche friends_final_for_display apenas com os dados dos amigos diretos
+            # que já foram obtidos (players_data_direct_friends)
+            players_dict = {p["steamid"]: p for p in players_data_direct_friends}
+
+            for friend_raw_data in steam_friends_raw:
+                steamid_friend = friend_raw_data["steamid"]
+                friend_since = friend_raw_data.get("friend_since")
+
+                print(f"Iniciando tarefa de background para processar amigos de {steamid_friend}")
+                if not database.pode_atualizar(
+                        steamid_friend):  # provavelmente você queria steamid_friend, não steam_id
+                    fila.put(steamid_friend)
+                else:
+                    print(f"O usuario {steamid_friend} já foi salvo")
+
+                match = players_dict.get(steamid_friend)
+                if match:
+                    match["friend_since"] = friend_since
+                    friends_final_for_display.append(match)
 
 
-
-        # XP da badge Game Collector
-        badge_xp = get_badge_xp(steam_id, 13)
-
-        if not profile_data or not ban_data:
+        except requests.exceptions.RequestException as e:
+            print(len(steam_friends_raw))
+            if len(steam_friends_raw) > 350:
+                database._process_single_player_data_and_friends(steam_id, api_key) # ISSO FOI UM DOS JEITOS QUE JÁ RESOLVI UM PROBLEMA MAS PORFAVOR TOME CUIDADO COM ISSO E FAÇO UM SISTEMA RE CARREGAR A PAGINA SE FOR USADOR POR MUITO TEMPO
+            print(f"Erro ao acessar API da Steam: {e}")
+            # Detalhes do erro para debug
+            print(f"URL Perfil: {profile_url}")
+            print(f"URL Ban: {ban_url}")
+            print(f"URL Nivel: {lvl_url}")
+            print(f"URL Amigos: {friends_url}")
+            print(requests.get(friends_url).json())
+            return None
+        except Exception as e:
+            print(f"Erro inesperado em get_player_info para {steam_id}: {e}")
+            import traceback
+            traceback.print_exc()  # Isso ajuda a ver a pilha de chamadas
             return None
 
-        player = profile_data[0]
-        bans = ban_data[0]
-        badge_name, games_count = badge_from_xp(badge_xp)
+    else:
+        return database.buscar_ultima_versao(steam_id)
 
-        player_data = {
-            "steam_id": steam_id,
-            "name": player.get("personaname", "Desconhecido"),
-            "avatar": player.get("avatarfull", ""),
-            "profileurl": player.get("profileurl", f"https://steamcommunity.com/profiles/{steam_id}"),
-            "vac_bans": bans.get("NumberOfVACBans", 0),
-            "game_bans": bans.get("NumberOfGameBans", 0),
-            "community_ban": bans.get("CommunityBanned", False),
-            "trade_ban": bans.get("EconomyBan", "none"),
-            "loccountrycode": player.get("loccountrycode"),
-            "locinfos": get_location_dict(f"https://steamcommunity.com/profiles/{steam_id}"),
-            "communityvisibilitystate": player.get("communityvisibilitystate"),
-            "account_age": player.get("timecreated"),
-            "xpyos": get_badge_xp(steam_id, 1),
-            "vanity_url": get_custom_url(steam_id),
-            "acclimit5dol": acclimit5dol(
-                get_badge_xp(steam_id, 1),
-                conversor_timestamp(player.get("timecreated"), "year"),
-                bans.get("CommunityBanned", False),
-                player.get("communityvisibilitystate")
-            ),
-            "friends": friends_final,
-            "lvl": steam_level,
-            "badge_xp": badge_xp,
-            "badge_name": badge_name,
-            "games_count": int(games_count),
-            "badge_count": int(badgeschecker(steam_id))
-        }
 
-        return player_data
 
-    except requests.exceptions.RequestException as e:
-        print(f"Erro ao acessar API da Steam: {e}")
-        return None
+
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -253,7 +311,8 @@ def index():
         if not steam_id:
             return render_template("index.html", error="Steam ID inválido ou perfil não encontrado")
 
-        player = get_player_info(steam_id, STEAM_API_KEY)
+        # Chama get_player_info que AGORA NÃO FAZ RECURSÃO BLOQUEANTE
+        player = get_player_info(steam_id, SMARTAPI)
         if not player:
             return render_template("index.html", error="Não foi possível obter dados do perfil")
 

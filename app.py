@@ -1,10 +1,15 @@
 from flask import Flask, render_template, request, redirect
 import steam_api
-from api import STEAM_API_KEY
+
 from badge_utils import badge_number
 from steam_api import conversor_timestamp
+from background_jobs import iniciar_loop_background
+from api import DELAY, SMARTAPI
 
 app = Flask(__name__)
+iniciar_loop_background(DELAY)
+
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -24,7 +29,7 @@ def index():
 
 @app.route("/id/<steam_id>")
 def perfil(steam_id):
-    player_data = steam_api.get_player_info(steam_id, STEAM_API_KEY)  # Passa a API key corretamente
+    player_data = steam_api.get_player_info(steam_id, SMARTAPI)  # Passa a API key corretamente
     if player_data:
         return render_template("profile.html", player=player_data,
                                badge_number=badge_number if badge_number is not None else "",
